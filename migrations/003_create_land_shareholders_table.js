@@ -1,0 +1,33 @@
+exports.up = async function(knex) {
+  if (await knex.schema.hasTable('building_land_shareholders')) return;
+  await knex.schema.createTable('building_land_shareholders', table => {
+    table.increments('id_shareholders').primary();
+    table.integer('id_buildings').unsigned().notNullable();
+    table.string('shareholder_name', 250).notNullable();
+    table.string('father_name', 250).nullable();
+    table.string('nid_no', 50).nullable();
+    table.string('phone', 20).nullable();
+    table.string('email', 150).nullable();
+    table.text('address').nullable();
+    table.decimal('land_share_katha', 12, 4).notNullable();
+    table.decimal('land_share_percent', 8, 4).notNullable();
+    table.decimal('land_share_sqft', 12, 4).nullable();
+    table.decimal('entitled_flat_area_sqft', 12, 4).nullable();
+    table.integer('entitled_flat_count').unsigned().nullable();
+    table.decimal('entitled_car_park_count', 8, 2).nullable();
+    table.string('agreement_no', 100).nullable();
+    table.date('agreement_date').nullable();
+    table.enum('payment_mode', ['Cash','Flat','Cash + Flat','Plot']).nullable().defaultTo('Flat');
+    table.decimal('cash_amount_bdt', 16, 2).nullable();
+    table.string('power_of_attorney_no', 150).nullable();
+    table.date('power_of_attorney_date').nullable();
+    table.enum('status', ['Active','Inactive']).notNullable().defaultTo('Active');
+    table.text('notes').nullable();
+    table.integer('created_by').unsigned().notNullable();
+    table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
+    table.timestamp('updated_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'));
+    table.index(['id_buildings']);
+    table.foreign('id_buildings','fk_sh_buildings').references('id_buildings').inTable('buildings').onDelete('RESTRICT');
+  });
+};
+exports.down = knex => knex.schema.dropTableIfExists('building_land_shareholders');
