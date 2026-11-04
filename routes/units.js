@@ -75,7 +75,7 @@ router.get('/', checkAuth, async (req, res) => {
     if (unit_type) q = q.where('u.unit_type', unit_type);
     if (status) q = q.where('u.status', status);
     if (allocation_type) q = q.where('u.allocation_type', allocation_type);
-    const cr = await q.clone().count('u.id_units as total').first();
+    const cr = await q.clone().clearSelect().clearOrder().count('u.id_units as total').first();
     const list = await q.orderBy('u.unit_no','asc').limit(parseInt(limit)).offset(offset);
     res.json({ success:true, data:list, total:cr?.total||0 });
   } catch(err) { console.error(err); res.status(500).json({ success:false, message:'Server error' }); }

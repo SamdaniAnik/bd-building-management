@@ -86,7 +86,7 @@ router.get('/', checkAuth, async (req, res) => {
     if (search) q = q.where(function(){ this.where('b.building_name','like',`%${search}%`).orWhere('b.building_code','like',`%${search}%`).orWhere('b.address','like',`%${search}%`); });
     if (status) q = q.where('b.status', status);
     if (building_type) q = q.where('b.building_type', building_type);
-    const [cErr, cr] = await _(q.clone().count('b.id_buildings as total').first());
+    const [cErr, cr] = await _(q.clone().clearSelect().clearOrder().count('b.id_buildings as total').first());
     const [lErr, list] = await _(q.orderBy(`b.${orderBy}`, order).limit(parseInt(limit)).offset(offset));
     if (cErr || lErr) throw cErr || lErr;
     res.json({ success: true, data: list, total: cr?.total || 0, page: parseInt(page), limit: parseInt(limit) });

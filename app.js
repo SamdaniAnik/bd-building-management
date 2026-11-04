@@ -12,6 +12,18 @@ const unitsRouter = require('./routes/units');
 const costingRouter = require('./routes/costing');
 const paymentsRouter = require('./routes/payments');
 const apartmentRouter = require('./routes/apartment');
+const bdLocalRouter = require('./routes/bd-local');
+const collectionsRouter = require('./routes/collections');
+const payRouter = require('./routes/pay');
+const opsRouter = require('./routes/ops');
+const scheduler = require('./jobs/scheduler');
+const checkAuth = require('./middleware/auth');
+const { staffOr } = checkAuth;
+
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET is not set — refusing to start without it.');
+  process.exit(1);
+}
 
 const app = express();
 
@@ -42,13 +54,22 @@ app.use(cookieParser());
 app.get('/health', (req, res) => res.json({ status: 'ok', project: 'Apartment Construction & Owner Management System', time: new Date() }));
 
 // Routes
+// Every business route needs a logged-in user. Staff (admin/manager) can use everything;
+// flat-owner logins ('viewer') can only reach their own portal and online payment.
+const staffOnly = staffOr([]);
 app.use('/api/auth', authRouter);
-app.use('/api/apartment', apartmentRouter);
-app.use('/api/buildings', buildingsRouter);
-app.use('/api/shareholders', shareholdersRouter);
-app.use('/api/units', unitsRouter);
-app.use('/api/costing', costingRouter);
-app.use('/api/payments', paymentsRouter);
+app.use('/api/apartment', checkAuth, staffOr(['/owner-portal']), apartmentRouter);
+app.use('/api/bd-local', checkAuth, staffOnly, bdLocalRouter);
+app.use('/api/collections', checkAuth, staffOnly, collectionsRouter);
+// Building operations: tenants & rent, service charge billing, staff payroll, gate/parking/notices.
+// Owners may only read the notice board and use their own complaints desk.
+app.use('/api/ops', checkAuth, staffOr(['/gate/portal', '/helpdesk/portal']), opsRouter);
+app.use('/api/pay', payRouter); // gateway callbacks are public; the router checks auth per route
+app.use('/api/buildings', checkAuth, staffOnly, buildingsRouter);
+app.use('/api/shareholders', checkAuth, staffOnly, shareholdersRouter);
+app.use('/api/units', checkAuth, staffOnly, unitsRouter);
+app.use('/api/costing', checkAuth, staffOnly, costingRouter);
+app.use('/api/payments', checkAuth, staffOnly, paymentsRouter);
 
 // 404 handler
 app.use((req, res) => {
@@ -72,6 +93,7 @@ app.listen(PORT, () => {
   console.log(` Health check:      http://localhost:${PORT}/health`);
   console.log(` Apartment API:     http://localhost:${PORT}/api/apartment/dashboard`);
   console.log('========================================\n');
+  scheduler.start();
 });
 
 module.exports = app;

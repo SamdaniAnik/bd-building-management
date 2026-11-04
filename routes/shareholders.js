@@ -64,7 +64,7 @@ router.get('/', checkAuth, async (req, res) => {
     const offset = (parseInt(page)-1)*parseInt(limit);
     let q = db('building_land_shareholders as s').leftJoin('buildings as b','s.id_buildings','b.id_buildings').select('s.*','b.building_name');
     if (id_buildings) q = q.where('s.id_buildings', id_buildings);
-    const cr = await q.clone().count('s.id_shareholders as total').first();
+    const cr = await q.clone().clearSelect().clearOrder().count('s.id_shareholders as total').first();
     const list = await q.orderBy('s.id_shareholders','desc').limit(parseInt(limit)).offset(offset);
     res.json({ success:true, data:list, total:cr?.total||0 });
   } catch(err) { console.error(err); res.status(500).json({ success:false, message:'Server error' }); }

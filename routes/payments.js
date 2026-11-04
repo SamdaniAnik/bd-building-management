@@ -43,7 +43,7 @@ router.get('/', checkAuth, async (req, res) => {
     let q = db('building_unit_payments as p').leftJoin('building_units as u','p.id_units','u.id_units').select('p.*','u.unit_no');
     if (id_units) q = q.where('p.id_units', id_units);
     if (id_buildings) q = q.where('p.id_buildings', id_buildings);
-    const cr = await q.clone().count('p.id_payments as total').first();
+    const cr = await q.clone().clearSelect().clearOrder().count('p.id_payments as total').first();
     const list = await q.orderBy('p.payment_date','desc').limit(parseInt(limit)).offset(offset);
     res.json({ success:true, data:list, total:cr?.total||0 });
   } catch(err) { res.status(500).json({ success:false }); }

@@ -4,9 +4,11 @@ const { db } = require('../db/schemas');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
+const checkAuth = require('../middleware/auth');
+const { requireRole } = checkAuth;
 
-// Register
-router.post('/register', async (req, res) => {
+// Register — only an admin can create users (otherwise anyone could self-register as admin)
+router.post('/register', checkAuth, requireRole('admin'), async (req, res) => {
   try {
     const schema = Joi.object({
       name: Joi.string().required(),
@@ -58,9 +60,10 @@ router.post('/login', async (req, res) => {
 });
 
 // Get me
-router.get('/me', require('../middleware/auth'), async (req, res) => {
+router.get('/me', checkAuth, async (req, res) => {
   const user = await db('users').where('id_users', req.user.id_users).select('id_users','name','email','role').first();
-  res.json({ success: true, user });
+  if (!user) return res.status(401).json({ success: false, message: 'User no longer exists' });
+  res.json({ success: true, user: { id: user.id_users, name: user.name, email: user.email, role: user.role } });
 });
 
 module.exports = router;

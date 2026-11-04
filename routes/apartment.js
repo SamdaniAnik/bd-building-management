@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/schemas');
 const checkAuth = require('../middleware/auth');
+const { loadFineContext, fineFor } = require('../utils/latefee');
 
 // Audit logger helper
 async function logAudit(userName, action, entityType, entityId, oldValue, newValue) {
@@ -1062,9 +1063,12 @@ router.get('/owner-portal/me', checkAuth, async (req, res) => {
     // Locate the owner corresponding to current user
     const owner = await db('owners').where('login_email', req.user.email).first();
     if (!owner) {
-      // Fallback to first owner (Owner A) if logged in as admin inspecting owner view
-      const fallbackOwner = await db('owners').first();
-      return res.json({ success: true, data: await getOwnerPortalData(fallbackOwner.id_owners) });
+      // Staff may preview the portal (optionally ?ownerId=). An owner login with no linked
+      // owner record must never fall through to someone else's data.
+      if (!checkAuth.isStaff(req.user)) return res.status(404).json({ success: false, message: 'No flat owner profile is linked to this login' });
+      const preview = req.query.ownerId ? await db('owners').where('id_owners', req.query.ownerId).first() : await db('owners').whereNotNull('login_email').first();
+      if (!preview) return res.status(404).json({ success: false, message: 'Owner not found' });
+      return res.json({ success: true, preview: true, data: await getOwnerPortalData(preview.id_owners) });
     }
     const data = await getOwnerPortalData(owner.id_owners);
     res.json({ success: true, data });
@@ -1100,6 +1104,14 @@ async function getOwnerPortalData(ownerId) {
 
   const loans = await db('owner_loans').where('id_owners', ownerId);
   const ledger = await db('owner_ledgers').where('id_owners', ownerId).orderBy('transaction_date', 'asc');
+  const fineCtx = await loadFineContext();
+  const schedules = (await db('owner_payment_schedules').where('id_owners', ownerId).orderBy('due_date', 'asc')).map(s => {
+    const outstanding = Math.max(0, Number(s.target_amount) - Number(s.paid_amount || 0));
+    const f = s.status === 'PAID' ? { fine: 0, days_late: 0, waived: false } : fineFor(fineCtx, 'INSTALLMENT', String(s.id_schedules), outstanding, s.due_date);
+    return { ...s, outstanding, late_fine: f.fine, days_late: f.days_late, fine_waived: f.waived };
+  });
+  const receipts = await db('money_receipts').where({ id_owners: ownerId, status: 'ISSUED' }).orderBy('issue_datetime', 'desc')
+    .select('id_receipts', 'receipt_no', 'doc_type', 'issue_datetime', 'total_bdt', 'payment_method').catch(() => []);
 
   return {
     owner,
@@ -1117,7 +1129,9 @@ async function getOwnerPortalData(ownerId) {
     works,
     contributions,
     loans,
-    ledger
+    ledger,
+    schedules,
+    receipts
   };
 }
 
@@ -1403,7 +1417,7 @@ router.post('/contractors/progress-bills', async (req, res) => {
     }
 
     await logAudit(req.user ? req.user.name : 'Project Manager', 'Certified Contractor Progress Bill', 'CONTRACT_BILL', id, null, { netPayable, bill_number });
-    res.json({ success: true, message: `Interim Progress Bill ${bill_number} certified for payment of $${netPayable.toLocaleString()}`, id });
+    res.json({ success: true, message: `Interim Progress Bill ${bill_number} certified for payment of ৳${netPayable.toLocaleString("en-IN")}`, id });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -1478,7 +1492,7 @@ router.post('/labour/attendance', async (req, res) => {
       status: 'PRESENT'
     });
 
-    res.json({ success: true, message: `Daily attendance logged. Pay: $${calcPay.toFixed(2)}`, id });
+    res.json({ success: true, message: `Daily attendance logged. Pay: ৳${calcPay.toFixed(2)}`, id });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -1634,7 +1648,11 @@ router.post('/post-handover/tickets', async (req, res) => {
       category: category || 'OTHER',
       description,
       priority: priority || 'MEDIUM',
-      status: 'OPEN'
+      status: 'OPEN',
+      // Same fix-by deadline as the Helpdesk (routes/ops/helpdesk.js) so escalation covers these too.
+      due_by: require('./ops/helpdesk').dueFrom(new Date(), priority || 'MEDIUM'),
+      source: 'STAFF',
+      created_by: req.user?.name || 'Staff'
     });
     res.json({ success: true, message: 'Maintenance ticket lodged', id });
   } catch (err) {

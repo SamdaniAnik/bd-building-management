@@ -50,7 +50,7 @@ router.get('/', checkAuth, async (req, res) => {
     if (id_buildings) q = q.where('c.id_buildings', id_buildings);
     if (cost_type) q = q.where('c.cost_type', cost_type);
     if (payment_status) q = q.where('c.payment_status', payment_status);
-    const cr = await q.clone().count('c.id_costing as total').first();
+    const cr = await q.clone().clearSelect().clearOrder().count('c.id_costing as total').first();
     const list = await q.orderBy('c.id_costing','desc').limit(parseInt(limit)).offset(offset);
     res.json({ success:true, data:list, total:cr?.total||0 });
   } catch(err) { console.error(err); res.status(500).json({ success:false, message:'Server error' }); }
