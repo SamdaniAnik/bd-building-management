@@ -3,7 +3,6 @@
 const express = require('express');
 const router = express.Router();
 const { db, fail, bad, userName } = require('./common');
-const { requireRole } = require('../../middleware/auth');
 const { isValidBdMobile, normalizeBdMobile } = require('../../utils/bd');
 const { JOBS, resolveOptions } = require('../../jobs/definitions');
 const scheduler = require('../../jobs/scheduler');
@@ -33,7 +32,7 @@ router.get('/jobs', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
-router.put('/jobs/:key', requireRole('admin'), async (req, res) => {
+router.put('/jobs/:key', async (req, res) => { // needs automation.edit (middleware/auth.js authorize)
   try {
     const key = req.params.key;
     const def = JOBS[key];

@@ -5,7 +5,7 @@ const router = express.Router();
 const { db, fail, bad, userName, num, round2, ymd, today, isMonth, dayOfMonth, monthsBetween, unitsQuery, primaryOwners, pick, method } = require('./common');
 const { issueReceipt } = require('../../utils/receipts');
 const { getSettings } = require('../../utils/org');
-const { isValidBdMobile, normalizeBdMobile } = require('../../utils/bd');
+const { isValidBdMobile, normalizeBdMobile, nidError } = require('../../utils/bd');
 const sms = require('../../utils/sms');
 
 const TENANT_FIELDS = ['id_units', 'full_name', 'father_name', 'date_of_birth', 'marital_status', 'permanent_address', 'occupation', 'workplace_address',
@@ -104,8 +104,9 @@ router.post('/', async (req, res) => {
       if (!isValidBdMobile(row.emergency_phone)) throw bad('Emergency contact number is not a valid Bangladeshi mobile');
       row.emergency_phone = normalizeBdMobile(row.emergency_phone);
     }
-    if (row.nid_no && !/^(\d{10}|\d{13}|\d{17})$/.test(String(row.nid_no).replace(/\s/g, ''))) throw bad('NID number must be 10, 13 or 17 digits');
-    if (row.nid_no) row.nid_no = String(row.nid_no).replace(/\s/g, '');
+    const nidErr = nidError(row.nid_no, row.date_of_birth);
+    if (nidErr) throw bad(nidErr);
+    if (row.nid_no) row.nid_no = String(row.nid_no).replace(/[\s-]/g, '');
     if (!(await db('units').where({ id_units: row.id_units }).first())) throw bad('Flat not found');
     row.police_form_submitted = !!row.police_form_submitted;
     for (const k of PEOPLE_FIELDS) if (b[k] !== undefined) row[k] = JSON.stringify(cleanPeople(b[k]));
@@ -140,6 +141,7 @@ router.delete('/:id', async (req, res) => {
       const ags = await trx('rent_agreements').where({ id_tenants: req.params.id }).pluck('id_rent_agreements');
       if (ags.length) await trx('rent_invoices').whereIn('id_rent_agreements', ags).del();
       await trx('rent_agreements').where({ id_tenants: req.params.id }).del();
+      await trx('tenant_documents').where({ id_tenants: req.params.id }).del();
       await trx('tenants').where({ id_tenants: req.params.id }).del();
     });
     res.json({ success: true, message: 'Tenant deleted' });
@@ -291,6 +293,51 @@ router.post('/invoices/remind', async (req, res) => {
     const ids = (req.body?.ids || []).map(Number).filter(Boolean);
     if (!ids.length) throw bad('Select at least one invoice');
     res.json({ success: true, ...(await remindRentInvoices(ids, userName(req))) });
+  } catch (err) { fail(res, err); }
+});
+
+// ── ID documents (NID front/back, photo…) ────────────────────────
+// Images arrive as data URLs already resized in the browser; they are kept in the database and only
+// served through these staff-only routes, never as public files.
+const DOC_TYPES = ['NID_FRONT', 'NID_BACK', 'PHOTO', 'PASSPORT', 'OTHER'];
+const MAX_DOC_BYTES = 1.5 * 1024 * 1024;
+
+router.get('/:id/documents', async (req, res) => {
+  try {
+    const rows = await db('tenant_documents').where({ id_tenants: req.params.id }).orderBy('id_tenant_documents')
+      .select('id_tenant_documents', 'doc_type', 'mime', 'size_bytes', 'uploaded_by', 'created_at');
+    res.json({ success: true, rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/:id/documents', async (req, res) => {
+  try {
+    const { doc_type, data } = req.body || {};
+    if (!DOC_TYPES.includes(doc_type)) throw bad('Unknown document type');
+    const m = /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/.exec(String(data || ''));
+    if (!m) throw bad('Upload a JPG, PNG, WebP or PDF file');
+    const size = Math.floor(m[2].length * 3 / 4);
+    if (size > MAX_DOC_BYTES) throw bad('File is too large (max 1.5 MB)');
+    if (!(await db('tenants').where({ id_tenants: req.params.id }).first())) throw bad('Tenant not found');
+    // One NID front / back / photo per tenant: a new upload replaces the old one.
+    if (doc_type !== 'OTHER') await db('tenant_documents').where({ id_tenants: req.params.id, doc_type }).del();
+    const [id] = await db('tenant_documents').insert({ id_tenants: req.params.id, doc_type, mime: m[1], data, size_bytes: size, uploaded_by: userName(req) });
+    res.json({ success: true, message: 'Document uploaded', id });
+  } catch (err) { fail(res, err); }
+});
+
+router.get('/documents/:docId', async (req, res) => {
+  try {
+    const d = await db('tenant_documents').where({ id_tenant_documents: req.params.docId }).first();
+    if (!d) return res.status(404).json({ success: false, message: 'Document not found' });
+    res.json({ success: true, doc: d });
+  } catch (err) { fail(res, err); }
+});
+
+router.delete('/documents/:docId', async (req, res) => {
+  try {
+    await db('tenant_documents').where({ id_tenant_documents: req.params.docId }).del();
+    res.json({ success: true, message: 'Document deleted' });
   } catch (err) { fail(res, err); }
 });
 

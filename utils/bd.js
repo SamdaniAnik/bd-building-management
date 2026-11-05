@@ -7,7 +7,8 @@ const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 // Bangladesh fiscal year runs 1 July – 30 June. Returns e.g. "2026-27".
 function fiscalYearOf(dateInput) {
-  const d = dateInput ? new Date(dateInput) : new Date();
+  const m = typeof dateInput === 'string' && /^(\d{4})-(\d{2})-\d{2}/.exec(dateInput);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, 1) : dateInput ? new Date(dateInput) : new Date();
   const y = d.getFullYear();
   const start = d.getMonth() >= 6 ? y : y - 1;
   return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
@@ -20,6 +21,26 @@ function isValidBdMobile(num) {
 function normalizeBdMobile(num) {
   return String(num || '').replace(/[\s-]/g, '').replace(/^\+?88/, '');
 }
+
+// ── Identity & tax numbers ──────────────────────────────────────────────
+const digits = v => String(v || '').replace(/[\s-]/g, '');
+
+// NID: 10 digits (smart card), 13 digits (old laminated) or 17 digits (old number with the birth year in front).
+// Returns an error message, or null when the number looks right. With a date of birth, a 17-digit number
+// must start with the birth year.
+function nidError(nid, dateOfBirth) {
+  const n = digits(nid);
+  if (!n) return null;
+  if (!/^(\d{10}|\d{13}|\d{17})$/.test(n)) return 'NID number must be 10, 13 or 17 digits';
+  if (n.length === 17 && dateOfBirth) {
+    const year = String(dateOfBirth instanceof Date ? dateOfBirth.getFullYear() : String(dateOfBirth).slice(0, 4));
+    if (/^\d{4}$/.test(year) && n.slice(0, 4) !== year) return `A 17-digit NID starts with the birth year — this one starts with ${n.slice(0, 4)}, but the date of birth is in ${year}`;
+  }
+  return null;
+}
+// e-TIN: 12 digits. BIN: 9 digits, or 13 with the 4-digit branch suffix (000123456-0101).
+const tinError = v => (!digits(v) || /^\d{12}$/.test(digits(v)) ? null : 'e-TIN must be 12 digits');
+const binError = v => (!digits(v) || /^(\d{9}|\d{13})$/.test(digits(v)) ? null : 'BIN must be 9 digits (or 13 with the branch code)');
 
 // ── Flat deed registration ──────────────────────────────────────────────
 const DEFAULT_REGISTRATION_RATES = {
@@ -96,14 +117,17 @@ const DEFAULT_WITHHOLDING = {
   OTHER: { tds: 0, vds: 0 },
 };
 
-function computeWithholding({ gross_amount_bdt, service_category, tds_rate_percent, vds_rate_percent }) {
+// no_tin_uplift_percent > 0 raises the TDS rate for a vendor without a TIN (e.g. 50 → 5% becomes 7.5%).
+function computeWithholding({ gross_amount_bdt, service_category, tds_rate_percent, vds_rate_percent, no_tin_uplift_percent }) {
   const def = DEFAULT_WITHHOLDING[service_category] || DEFAULT_WITHHOLDING.OTHER;
   const gross = Number(gross_amount_bdt) || 0;
-  const tdsRate = tds_rate_percent === undefined || tds_rate_percent === '' ? def.tds : Number(tds_rate_percent);
+  const baseTds = tds_rate_percent === undefined || tds_rate_percent === '' ? def.tds : Number(tds_rate_percent);
+  const uplift = Math.max(0, Number(no_tin_uplift_percent) || 0);
+  const tdsRate = round2(baseTds * (1 + uplift / 100));
   const vdsRate = vds_rate_percent === undefined || vds_rate_percent === '' ? def.vds : Number(vds_rate_percent);
   const tds = round2(gross * tdsRate / 100);
   const vds = round2(gross * vdsRate / 100);
-  return { tds_rate_percent: tdsRate, tds_amount_bdt: tds, vds_rate_percent: vdsRate, vds_amount_bdt: vds, net_payable_bdt: round2(gross - tds - vds) };
+  return { tds_rate_percent: tdsRate, tds_amount_bdt: tds, vds_rate_percent: vdsRate, vds_amount_bdt: vds, net_payable_bdt: round2(gross - tds - vds), no_tin_uplift: uplift > 0 };
 }
 
 // ── Holding tax ──────────────────────────────────────────────────────────
@@ -132,7 +156,7 @@ function holdingStatus(paid, due, fiscalYear) {
 }
 
 module.exports = {
-  round2, fiscalYearOf, isValidBdMobile, normalizeBdMobile,
+  round2, fiscalYearOf, isValidBdMobile, normalizeBdMobile, nidError, tinError, binError,
   DEFAULT_REGISTRATION_RATES, computeRegistrationCost,
   DEFAULT_WITHHOLDING, computeWithholding,
   computeHoldingTax, holdingStatus,

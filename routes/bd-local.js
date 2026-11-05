@@ -225,12 +225,28 @@ router.post('/withholding', async (req, res) => {
     if (!b.vendor_name) return fail(res, new Error('Vendor name is required'), 400);
     if (!(Number(b.gross_amount_bdt) > 0)) return fail(res, new Error('Gross bill amount must be greater than 0'), 400);
     const billDate = b.bill_date || toYmd(new Date());
-    const calc = bd.computeWithholding(b);
+    // A vendor picked from the vendor list fills in its saved TIN/BIN; IDs typed here are saved back to the vendor.
+    const vendor = b.id_vendors ? await db('vendors').where({ id_vendors: b.id_vendors }).first() : null;
+    if (vendor) {
+      b.vendor_tin = String(b.vendor_tin || vendor.tin_no || '').trim();
+      b.vendor_bin = String(b.vendor_bin || vendor.bin_no || '').trim();
+    }
+    const tinErr = bd.tinError(b.vendor_tin);
+    if (tinErr) return fail(res, new Error(tinErr), 400);
+    const binErr = bd.binError(b.vendor_bin);
+    if (binErr) return fail(res, new Error(binErr), 400);
+    // No TIN → higher source tax (rate in Collections → settings), unless the user switches it off for this bill.
+    const { getSettings } = require('../utils/org');
+    const upliftPct = !b.vendor_tin && truthy(b.apply_no_tin_uplift) ? Number((await getSettings()).no_tin_tds_uplift_percent) || 0 : 0;
+    const calc = bd.computeWithholding({ ...b, no_tin_uplift_percent: upliftPct });
+    if (!b.preview && vendor && (b.vendor_tin !== (vendor.tin_no || '') || b.vendor_bin !== (vendor.bin_no || ''))) {
+      await db('vendors').where({ id_vendors: vendor.id_vendors }).update({ tin_no: b.vendor_tin || null, bin_no: b.vendor_bin || null });
+    }
     if (b.preview) return res.json({ success: true, calculation: calc, fiscal_year: bd.fiscalYearOf(billDate) });
 
     const row = {
       id_projects: projectOf(req), id_vendors: b.id_vendors || null,
-      vendor_name: b.vendor_name, vendor_bin: b.vendor_bin || null, vendor_tin: b.vendor_tin || null,
+      vendor_name: b.vendor_name, vendor_bin: b.vendor_bin || null, vendor_tin: b.vendor_tin || null, no_tin_uplift: calc.no_tin_uplift,
       bill_no: b.bill_no || null, bill_date: billDate, fiscal_year: bd.fiscalYearOf(billDate),
       service_category: b.service_category || 'SUPPLY_OF_GOODS',
       gross_amount_bdt: b.gross_amount_bdt, ...calc,

@@ -19,5 +19,10 @@ router.use('/staff', require('./staff'));
 router.use('/gate', require('./gate'));
 router.use('/helpdesk', require('./helpdesk'));
 router.use('/automation', require('./automation'));
+router.use('/compliance', require('./compliance'));
+router.use('/upkeep', require('./upkeep'));
+router.use('/association', require('./association'));
+router.use('/elections', require('./elections'));
+router.use('/transfers', require('./transfers'));
 
 module.exports = router;

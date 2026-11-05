@@ -10,7 +10,7 @@ const { getSettings } = require('../../utils/org');
 const { isValidBdMobile, normalizeBdMobile } = require('../../utils/bd');
 const sms = require('../../utils/sms');
 
-const CATEGORIES = ['LIFT', 'GENERATOR', 'WATER_LEAKAGE', 'ELECTRICAL', 'GAS', 'SECURITY', 'CLEANING', 'PEST_CONTROL', 'PARKING', 'NOISE', 'INTERCOM_CCTV', 'COMMON_AREA', 'OTHER'];
+const CATEGORIES = ['LIFT', 'GENERATOR', 'WATER_LEAKAGE', 'WATERLOGGING', 'ROOF_LEAK', 'WATER_SUPPLY', 'ELECTRICAL', 'GAS', 'SECURITY', 'CLEANING', 'PEST_CONTROL', 'PARKING', 'NOISE', 'INTERCOM_CCTV', 'COMMON_AREA', 'OTHER'];
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'];
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ON_HOLD', 'RESOLVED', 'CLOSED'];
 const ACTIVE = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ON_HOLD'];

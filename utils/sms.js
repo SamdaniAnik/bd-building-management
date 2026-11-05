@@ -43,6 +43,26 @@ const DEFAULT_TEMPLATES = {
     body_en: 'Dear {{name}}, complaint {{ticket_no}} ({{title}}) is now {{status}}.{{note}} -{{org}}',
     body_bn: 'প্রিয় {{name}}, অভিযোগ {{ticket_no}} ({{title}}) এখন {{status}}।{{note}} -{{org}}',
   },
+  RENEWAL_DUE: {
+    name: 'Licence / certificate renewal reminder',
+    body_en: '{{title}} ({{ref}}) {{when}} on {{due_date}}. Please arrange the renewal. -{{org}}',
+    body_bn: '{{title}} ({{ref}}) — মেয়াদ {{due_date}} তারিখে {{when}}। নবায়নের ব্যবস্থা নিন। -{{org}}',
+  },
+  UPKEEP_DUE: {
+    name: 'Building upkeep task reminder',
+    body_en: 'Upkeep: {{title}} {{when}} on {{due_date}}. Please do it and record it in the system. -{{org}}',
+    body_bn: 'রক্ষণাবেক্ষণ: {{title}} — নির্ধারিত তারিখ {{due_date}} ({{when}})। কাজ শেষে সিস্টেমে লিখে রাখুন। -{{org}}',
+  },
+  MEETING_NOTICE: {
+    name: "Owners' meeting notice",
+    body_en: 'Dear {{name}}, {{title}} will be held on {{when}} at {{venue}}. Your presence is requested. -{{org}}',
+    body_bn: 'প্রিয় {{name}}, {{title}} {{when}} তারিখে {{venue}}-এ অনুষ্ঠিত হবে। আপনার উপস্থিতি কাম্য। -{{org}}',
+  },
+  ELECTION_NOTICE: {
+    name: 'Committee election voting notice',
+    body_en: 'Dear {{name}}, voting for {{title}} is open from {{opens}} to {{closes}}. Vote in the owner portal or at the polling booth. Your vote is secret. -{{org}}',
+    body_bn: 'প্রিয় {{name}}, {{title}}-এর ভোটগ্রহণ {{opens}} থেকে {{closes}} পর্যন্ত। মালিক পোর্টালে বা ভোটকেন্দ্রে ভোট দিন। আপনার ভোট গোপন থাকবে। -{{org}}',
+  },
   PAYMENT_RECEIVED: {
     name: 'Payment received confirmation',
     body_en: 'Dear {{name}}, we have received Tk {{amount}}{{unit_part}}. Receipt no {{receipt_no}}. Thank you. -{{org}}',
@@ -127,12 +147,26 @@ async function sendSms({ to, message, recipient_name, template_key, related_type
     try { result = await deliver(msisdn, message); }
     catch (e) { result = { status: 'FAILED', response: `Gateway error: ${e.message}` }; }
   }
-  const [id] = await db('sms_outbox').insert({
+  const base = {
     id_projects: id_projects || null, to_number: msisdn || String(to || '').slice(0, 20), recipient_name: recipient_name || null,
-    message, template_key: template_key || null, encoding, segments, provider, status: result.status,
-    provider_response: result.response, related_type: related_type || null, related_key: related_key || null, created_by: created_by || null,
-  });
-  return { id, ...result, to: msisdn, segments, encoding };
+    message, template_key: template_key || null, related_type: related_type || null, related_key: related_key || null, created_by: created_by || null,
+  };
+  const [id] = await db('sms_outbox').insert({ ...base, encoding, segments, provider, status: result.status, provider_response: result.response, channel: 'SMS' });
+  const whatsapp = msisdn ? await mirrorToWhatsApp(base, msisdn) : null;
+  return { id, ...result, to: msisdn, segments, encoding, whatsapp };
+}
+
+// When "Also send on WhatsApp" is switched on (Collections → settings), every SMS is copied to WhatsApp.
+// The SMS result stays the one that counts; a WhatsApp failure is only logged in the outbox.
+async function mirrorToWhatsApp(base, msisdn) {
+  const { getSettings } = require('./org');
+  if ((await getSettings()).whatsapp_enabled !== 'true') return null;
+  const wa = require('./whatsapp');
+  let r;
+  try { r = await wa.deliver(msisdn, base.message); }
+  catch (e) { r = { status: 'FAILED', response: `WhatsApp error: ${e.message}` }; }
+  await db('sms_outbox').insert({ ...base, encoding: 'UNICODE', segments: 1, provider: `whatsapp-${wa.status().provider}`, status: r.status, provider_response: r.response, channel: 'WHATSAPP' });
+  return r.status;
 }
 
 module.exports = { DEFAULT_TEMPLATES, ensureTemplates, getTemplate, render, toMsisdn, segmentInfo, providerStatus, sendSms };

@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
   sms_language: 'bn', // 'bn' | 'en'
   sms_auto_payment_received: 'true',
   receipt_footer: 'This is a computer-generated receipt. Please keep it for your records.',
+  whatsapp_enabled: 'false',        // copy every SMS to WhatsApp (see utils/whatsapp.js)
+  no_tin_tds_uplift_percent: '50',  // extra source tax when a vendor shows no TIN / return proof — check the current Finance Act
 };
 const KEYS = Object.keys(DEFAULT_SETTINGS);
 

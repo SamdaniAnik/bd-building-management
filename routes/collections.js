@@ -28,12 +28,12 @@ const MFS_PURPOSE = { INSTALLMENT: 'Instalment', SERVICE_CHARGE: 'Service charge
 // ── Settings ─────────────────────────────────────────────────
 router.get('/settings', async (req, res) => {
   try {
-    res.json({ success: true, settings: await getSettings(), sms: sms.providerStatus(), gateway: { mode: gatewayMode(), sandbox: sandbox() } });
+    res.json({ success: true, settings: await getSettings(), sms: sms.providerStatus(), whatsapp: require('../utils/whatsapp').status(), gateway: { mode: gatewayMode(), sandbox: sandbox() } });
   } catch (err) { fail(res, err); }
 });
 router.put('/settings', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Only an admin can change organisation settings' });
+    if (!req.can?.('collections.settings')) return res.status(403).json({ success: false, message: 'You do not have permission to change organisation settings' });
     res.json({ success: true, message: 'Settings saved', settings: await saveSettings(req.body) });
   } catch (err) { fail(res, err); }
 });

@@ -16,9 +16,10 @@ const bdLocalRouter = require('./routes/bd-local');
 const collectionsRouter = require('./routes/collections');
 const payRouter = require('./routes/pay');
 const opsRouter = require('./routes/ops');
+const inventoryRouter = require('./routes/inventory');
 const scheduler = require('./jobs/scheduler');
 const checkAuth = require('./middleware/auth');
-const { staffOr } = checkAuth;
+const { authorize } = checkAuth;
 
 if (!process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET is not set — refusing to start without it.');
@@ -54,22 +55,23 @@ app.use(cookieParser());
 app.get('/health', (req, res) => res.json({ status: 'ok', project: 'Apartment Construction & Owner Management System', time: new Date() }));
 
 // Routes
-// Every business route needs a logged-in user. Staff (admin/manager) can use everything;
-// flat-owner logins ('viewer') can only reach their own portal and online payment.
-const staffOnly = staffOr([]);
+// Every business route needs a logged-in user; `authorize` then checks the user's role permissions
+// (utils/permissions.js). Flat-owner logins only reach their own portal and online payment.
 app.use('/api/auth', authRouter);
-app.use('/api/apartment', checkAuth, staffOr(['/owner-portal']), apartmentRouter);
-app.use('/api/bd-local', checkAuth, staffOnly, bdLocalRouter);
-app.use('/api/collections', checkAuth, staffOnly, collectionsRouter);
+app.use('/api/rbac', checkAuth, authorize, require('./routes/rbac'));
+app.use('/api/apartment', checkAuth, authorize, apartmentRouter);
+app.use('/api/bd-local', checkAuth, authorize, bdLocalRouter);
+app.use('/api/collections', checkAuth, authorize, collectionsRouter);
 // Building operations: tenants & rent, service charge billing, staff payroll, gate/parking/notices.
-// Owners may only read the notice board and use their own complaints desk.
-app.use('/api/ops', checkAuth, staffOr(['/gate/portal', '/helpdesk/portal']), opsRouter);
+// Owners may only read the notice board, use their own complaints desk and see their own zakat statement.
+app.use('/api/ops', checkAuth, authorize, opsRouter);
 app.use('/api/pay', payRouter); // gateway callbacks are public; the router checks auth per route
-app.use('/api/buildings', checkAuth, staffOnly, buildingsRouter);
-app.use('/api/shareholders', checkAuth, staffOnly, shareholdersRouter);
-app.use('/api/units', checkAuth, staffOnly, unitsRouter);
-app.use('/api/costing', checkAuth, staffOnly, costingRouter);
-app.use('/api/payments', checkAuth, staffOnly, paymentsRouter);
+app.use('/api/inventory', checkAuth, authorize, inventoryRouter); // site store: stock ledger & material plan per work
+app.use('/api/buildings', checkAuth, authorize, buildingsRouter);
+app.use('/api/shareholders', checkAuth, authorize, shareholdersRouter);
+app.use('/api/units', checkAuth, authorize, unitsRouter);
+app.use('/api/costing', checkAuth, authorize, costingRouter);
+app.use('/api/payments', checkAuth, authorize, paymentsRouter);
 
 // 404 handler
 app.use((req, res) => {

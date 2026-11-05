@@ -106,6 +106,39 @@ const JOBS = {
       return { status: r.escalated ? 'OK' : 'NOTHING', message: r.message, details: r };
     },
   },
+
+  RENEWAL_REMINDERS: {
+    title: 'Licence & certificate renewal reminders',
+    title_bn: 'লাইসেন্স ও সনদ নবায়নের রিমাইন্ডার',
+    description: 'Texts the person responsible (or the mobile below) when a lift / fire / trade licence, RAJUK or Fire NOC, extinguisher refill or vendor trade licence is close to expiry: at the item’s first-reminder day, then 15, 7, 1 and 0 days before, then weekly for up to 4 weeks after it lapses.',
+    description_bn: 'লিফট/ফায়ার/ট্রেড লাইসেন্স, রাজউক বা ফায়ার এনওসি, অগ্নিনির্বাপক রিফিলের মেয়াদ শেষ হওয়ার আগে দায়িত্বপ্রাপ্ত ব্যক্তিকে এসএমএস পাঠায়: প্রথম রিমাইন্ডার, তারপর ১৫, ৭, ১ ও ০ দিন আগে, মেয়াদ শেষে সাপ্তাহিক।',
+    frequencies: ['DAILY'],
+    defaults: { frequency: 'DAILY', run_hour: 9, run_minute: 30, is_enabled: false },
+    options: [{ key: 'sms_to', type: 'phone', default: '', label: 'Text this mobile when an item has no responsible person', label_bn: 'দায়িত্বপ্রাপ্ত না থাকলে এই মোবাইলে' }],
+    async run(opts) {
+      const { sendRenewalReminders } = require('../routes/ops/compliance');
+      const r = await sendRenewalReminders({ smsTo: opts.sms_to || null });
+      return { status: r.sent + r.simulated + r.failed ? 'OK' : 'NOTHING', message: r.message, details: r };
+    },
+  },
+
+  UPKEEP_REMINDERS: {
+    title: 'Building upkeep reminders',
+    title_bn: 'ভবন রক্ষণাবেক্ষণের রিমাইন্ডার',
+    description: 'Texts the assigned staff member (or the mobile below) a few days before a scheduled upkeep task — tank cleaning, pump service, Aedes check, roof drains — and weekly while it is overdue.',
+    description_bn: 'ট্যাংক পরিষ্কার, পাম্প সার্ভিস, এডিস পরীক্ষা, ছাদের ড্রেন ইত্যাদির নির্ধারিত তারিখের কয়েক দিন আগে দায়িত্বপ্রাপ্ত কর্মীকে এসএমএস পাঠায়; বকেয়া থাকলে সাপ্তাহিক।',
+    frequencies: ['DAILY'],
+    defaults: { frequency: 'DAILY', run_hour: 8, run_minute: 30, is_enabled: false },
+    options: [
+      { key: 'days_ahead', type: 'number', min: 0, max: 30, default: 3, label: 'Remind this many days before due', label_bn: 'নির্ধারিত তারিখের কত দিন আগে' },
+      { key: 'sms_to', type: 'phone', default: '', label: 'Text this mobile when no staff member is assigned', label_bn: 'কর্মী নির্ধারিত না থাকলে এই মোবাইলে' },
+    ],
+    async run(opts) {
+      const { sendUpkeepReminders } = require('../routes/ops/upkeep');
+      const r = await sendUpkeepReminders({ daysAhead: opts.days_ahead, smsTo: opts.sms_to || null });
+      return { status: r.sent + r.simulated + r.failed ? 'OK' : 'NOTHING', message: r.message, details: r };
+    },
+  },
 };
 
 // Job options with defaults filled in and values clamped to the definition.
